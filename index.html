@@ -1635,9 +1635,29 @@ function populatePhotoStopSelect(){
   const sel = document.getElementById('photoStopSelect');
   sel.innerHTML = stops.map(s=>`<option value="${s.id}">${String(s.id).padStart(2,'0')} · ${escapeHtml(s.name)}</option>`).join('');
 }
-function resizeImageFile(file){
-  // Moderní prohlížeče (včetně Safari na iPhonu) si EXIF otočení fotky
-  // vyřeší samy už při načtení obrázku, takže appka ho nesmí otáčet znovu.
+async function resizeImageFile(file){
+  const maxDim = 900;
+  // Moderní cesta: createImageBitmap s explicitním imageOrientation vrátí
+  // bitmapu už správně natočenou podle EXIF, se správnými rozměry.
+  if(window.createImageBitmap){
+    try{
+      const bitmap = await createImageBitmap(file, {imageOrientation: 'from-image'});
+      let w = bitmap.width, h = bitmap.height;
+      if(w > maxDim || h > maxDim){
+        if(w >= h){ h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const canvas = document.getElementById('photoResizeCanvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      return canvas.toDataURL('image/jpeg', 0.72);
+    }catch(err){
+      // spadni na starší postup níže
+    }
+  }
+  // Záložní cesta pro starší prohlížeče bez podpory createImageBitmap
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
     reader.onerror = reject;
@@ -1645,7 +1665,6 @@ function resizeImageFile(file){
       const img = new Image();
       img.onerror = reject;
       img.onload = ()=>{
-        const maxDim = 900;
         let w = img.width, h = img.height;
         if(w > maxDim || h > maxDim){
           if(w >= h){ h = Math.round(h * maxDim / w); w = maxDim; }
