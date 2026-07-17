@@ -1635,62 +1635,9 @@ function populatePhotoStopSelect(){
   const sel = document.getElementById('photoStopSelect');
   sel.innerHTML = stops.map(s=>`<option value="${s.id}">${String(s.id).padStart(2,'0')} · ${escapeHtml(s.name)}</option>`).join('');
 }
-function getExifOrientation(file){
-  return new Promise((resolve)=>{
-    try{
-      const reader = new FileReader();
-      reader.onerror = ()=>resolve(1);
-      reader.onload = (e)=>{
-        try{
-          const view = new DataView(e.target.result);
-          if(view.getUint16(0, false) !== 0xFFD8){ resolve(1); return; }
-          const length = view.byteLength;
-          let offset = 2;
-          while(offset < length - 1){
-            const marker = view.getUint16(offset, false);
-            offset += 2;
-            if(marker === 0xFFE1){
-              if(view.getUint32(offset + 2, false) !== 0x45786966){ resolve(1); return; }
-              const tiffOffset = offset + 8;
-              const little = view.getUint16(tiffOffset, false) === 0x4949;
-              const firstIfdOffset = view.getUint32(tiffOffset + 4, little);
-              const dirStart = tiffOffset + firstIfdOffset;
-              const tags = view.getUint16(dirStart, little);
-              for(let i=0;i<tags;i++){
-                const entryOffset = dirStart + 2 + (i*12);
-                if(view.getUint16(entryOffset, little) === 0x0112){
-                  resolve(view.getUint16(entryOffset + 8, little));
-                  return;
-                }
-              }
-              resolve(1); return;
-            }else if((marker & 0xFF00) !== 0xFF00){
-              break;
-            }else{
-              offset += view.getUint16(offset, false);
-            }
-          }
-          resolve(1);
-        }catch(err){ resolve(1); }
-      };
-      reader.readAsArrayBuffer(file.slice(0, 128*1024));
-    }catch(err){ resolve(1); }
-  });
-}
-function applyExifTransform(ctx, orientation, w, h){
-  switch(orientation){
-    case 2: ctx.transform(-1,0,0,1,w,0); break;
-    case 3: ctx.transform(-1,0,0,-1,w,h); break;
-    case 4: ctx.transform(1,0,0,-1,0,h); break;
-    case 5: ctx.transform(0,1,1,0,0,0); break;
-    case 6: ctx.transform(0,1,-1,0,h,0); break;
-    case 7: ctx.transform(0,-1,-1,0,h,w); break;
-    case 8: ctx.transform(0,-1,1,0,0,w); break;
-    default: break; // 1, nebo neznámá hodnota - beze změny
-  }
-}
-async function resizeImageFile(file){
-  const orientation = await getExifOrientation(file);
+function resizeImageFile(file){
+  // Moderní prohlížeče (včetně Safari na iPhonu) si EXIF otočení fotky
+  // vyřeší samy už při načtení obrázku, takže appka ho nesmí otáčet znovu.
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
     reader.onerror = reject;
@@ -1699,22 +1646,15 @@ async function resizeImageFile(file){
       img.onerror = reject;
       img.onload = ()=>{
         const maxDim = 900;
-        const swapped = orientation >= 5 && orientation <= 8;
-        let outW = swapped ? img.height : img.width;
-        let outH = swapped ? img.width : img.height;
-        if(outW > maxDim || outH > maxDim){
-          if(outW >= outH){ outH = Math.round(outH * maxDim / outW); outW = maxDim; }
-          else { outW = Math.round(outW * maxDim / outH); outH = maxDim; }
+        let w = img.width, h = img.height;
+        if(w > maxDim || h > maxDim){
+          if(w >= h){ h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
         }
-        const drawW = swapped ? outH : outW;
-        const drawH = swapped ? outW : outH;
         const canvas = document.getElementById('photoResizeCanvas');
-        canvas.width = outW; canvas.height = outH;
+        canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.save();
-        applyExifTransform(ctx, orientation, drawW, drawH);
-        ctx.drawImage(img, 0, 0, drawW, drawH);
-        ctx.restore();
+        ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', 0.72));
       };
       img.src = reader.result;
