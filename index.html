@@ -1712,7 +1712,7 @@ async function resizeImageFile(file){
         canvas.width = outW; canvas.height = outH;
         const ctx = canvas.getContext('2d');
         ctx.save();
-        applyExifTransform(ctx, orientation, outW, outH);
+        applyExifTransform(ctx, orientation, drawW, drawH);
         ctx.drawImage(img, 0, 0, drawW, drawH);
         ctx.restore();
         resolve(canvas.toDataURL('image/jpeg', 0.72));
